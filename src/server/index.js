@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { generateAssistantResponse, generateAssistantResponseNoStream, getAvailableModels, generateImageForSD, closeRequester } from '../api/client.js';
+import { antigravityToClaudeResponse, setClaudeStreamHeaders, ClaudeStreamHandler } from '../utils/claudeFormat.js';
 import { generateRequestBody } from '../utils/utils.js';
 import logger from '../utils/logger.js';
 import config from '../config/config.js';
@@ -201,6 +202,116 @@ app.post('/v1/chat/completions', async (req, res) => {
           }]
         });
       }
+    }
+  }
+});
+
+// Claude API 端点
+app.post('/v1/messages', async (req, res) => {
+  const { messages, model, stream = false, system, max_tokens, ...params } = req.body;
+  
+  try {
+    // 验证必填参数
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ 
+        type: 'error',
+        error: { 
+          type: 'invalid_request_error',
+          message: 'messages is required and must be an array' 
+        }
+      });
+    }
+    
+    if (!model) {
+      return res.status(400).json({ 
+        type: 'error',
+        error: { 
+          type: 'invalid_request_error',
+          message: 'model is required' 
+        }
+      });
+    }
+    
+    if (!max_tokens) {
+      return res.status(400).json({ 
+        type: 'error',
+        error: { 
+          type: 'invalid_request_error',
+          message: 'max_tokens is required' 
+        }
+      });
+    }
+    
+    // 获取 token
+    const token = await tokenManager.getToken();
+    if (!token) {
+      throw new Error('没有可用的token，请运行 npm run login 获取token');
+    }
+    
+    // 将 Claude messages 转换为 OpenAI 格式
+    const openaiMessages = [];
+    
+    // 不要把 system 添加到 messages 中，而是作为参数传递
+    
+    // 转换消息
+    for (const msg of messages) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        let content = '';
+        if (typeof msg.content === 'string') {
+          content = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          // 处理多模态内容
+          const textBlocks = msg.content.filter(block => block.type === 'text');
+          content = textBlocks.map(block => block.text).join('\n');
+        }
+        openaiMessages.push({ role: msg.role, content });
+      }
+    }
+    
+    // 构建请求参数
+    const requestParams = {
+      ...params,
+      max_tokens: max_tokens
+    };
+    
+    // 生成请求体（传递自定义系统提示词）
+    const requestBody = generateRequestBody(openaiMessages, model, requestParams, null, token, system);
+    
+    // 生成消息 ID
+    const messageId = `msg_${Date.now()}`;
+    
+    if (stream) {
+      // 流式响应
+      setClaudeStreamHeaders(res);
+      
+      const streamHandler = new ClaudeStreamHandler(res, messageId, model);
+      streamHandler.start();
+      
+      await generateAssistantResponse(requestBody, token, (data) => {
+        if (data.type === 'usage') {
+          streamHandler.handleUsage(data.usage);
+        } else if (data.type === 'text' || data.type === 'thinking') {
+          streamHandler.handleContent(data.content);
+        }
+      });
+      
+      streamHandler.end();
+    } else {
+      // 非流式响应
+      const { content, usage } = await generateAssistantResponseNoStream(requestBody, token);
+      const claudeResponse = antigravityToClaudeResponse(content, model, usage);
+      res.json(claudeResponse);
+    }
+  } catch (error) {
+    logger.error('Claude API 生成响应失败:', error.message);
+    if (!res.headersSent) {
+      res.status(500).json({
+        type: 'error',
+        error: {
+          type: 'api_error',
+          message: error.message
+        }
+      });
     }
   }
 });

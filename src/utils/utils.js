@@ -189,7 +189,7 @@ function isEnableThinking(modelName){
     modelName === "gpt-oss-120b-medium"
 }
 
-function generateRequestBody(openaiMessages,modelName,parameters,openaiTools,token){
+function generateRequestBody(openaiMessages,modelName,parameters,openaiTools,token,customSystemInstruction=null){
   
   const enableThinking = isEnableThinking(modelName);
   const actualModelName = modelMapping(modelName);
@@ -201,7 +201,7 @@ function generateRequestBody(openaiMessages,modelName,parameters,openaiTools,tok
       contents: openaiMessageToAntigravity(openaiMessages),
       systemInstruction: {
         role: "user",
-        parts: [{ text: config.systemInstruction }]
+        parts: [{ text: customSystemInstruction || config.systemInstruction }]
       },
       tools: convertOpenAIToolsToAntigravity(openaiTools),
       toolConfig: {

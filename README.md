@@ -14,6 +14,7 @@
 - ✅ 图片输入支持（Base64 编码）
 - ✅ 图片生成支持（大/小香蕉 模型）
 - ✅ Pro 账号随机 ProjectId 支持
+- ✅ Claude API 兼容格式（/v1/messages 端点）
 
 ## 环境要求
 
@@ -238,6 +239,44 @@ curl http://localhost:8045/v1/chat/completions \
   }'
 ```
 
+### Claude API 示例
+
+支持 Claude 官方 API 格式（/v1/messages 端点），兼容流式和非流式响应：
+
+```bash
+# 非流式请求
+curl http://localhost:8045/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-text" \
+  -d '{
+    "model": "claude-opus-4-5-thinking",
+    "max_tokens": 4096,
+    "messages": [{"role": "user", "content": "你好"}]
+  }'
+
+# 流式请求
+curl http://localhost:8045/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-text" \
+  -d '{
+    "model": "claude-opus-4-5-thinking",
+    "max_tokens": 4096,
+    "stream": true,
+    "messages": [{"role": "user", "content": "你好"}]
+  }'
+
+# 带系统提示词
+curl http://localhost:8045/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-text" \
+  -d '{
+    "model": "claude-opus-4-5-thinking",
+    "max_tokens": 4096,
+    "system": "你是一个专业的数学老师",
+    "messages": [{"role": "user", "content": "什么是质数？"}]
+  }'
+```
+
 ## 多账号管理
 
 `data/accounts.json` 支持多个账号，服务会自动轮换使用：
@@ -352,11 +391,13 @@ npm run login
 │   ├── server/
 │   │   └── index.js        # 主服务器
 │   ├── utils/
+│   │   ├── claudeFormat.js # Claude API 格式转换
 │   │   ├── idGenerator.js  # ID 生成器
 │   │   ├── logger.js       # 日志模块
 │   │   └── utils.js        # 工具函数
 │   └── AntigravityRequester.js # TLS 指纹请求器封装
 ├── test/
+│   ├── test-cc.js          # Claude API 测试
 │   ├── test-request.js     # 请求测试
 │   └── test-transform.js   # 转换测试
 ├── .env                    # 环境变量配置（敏感信息）
